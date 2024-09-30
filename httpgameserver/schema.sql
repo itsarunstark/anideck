@@ -1,0 +1,7 @@
+DROP TABLE IF EXISTS gamers
+DROP TABLE IF EXISTS activeGamers
+DROP TABLE IF EXISTS batch
+
+
+CREATE TABLE IF NOT EXISTS gamers(
+    gamerId INT
