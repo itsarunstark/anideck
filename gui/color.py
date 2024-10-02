@@ -1,0 +1,10 @@
+
+class Color:
+    COLOR_BLACK = (0, 0, 0, 255)
+    COLOR_WHITE = (255, 255, 255, 255)
+    COLOR_BLUE = (0, 12, 245, 255)
+    COLOR_RED = (255, 45, 13, 255)
+    COLOR_CRIMSON_RED = (178, 34, 34)
+    COLOR_DARK_RED = (128, 0, 0)
+    COLOR_GREEN = (0, 178, 8)
+    COLOR_GREY = (0x80, 0x83, 0x81)
