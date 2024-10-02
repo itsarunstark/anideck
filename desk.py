@@ -1,5 +1,5 @@
 from pyglet import *
-from pyglet.window import Window
+from pyglet.window import Window, key
 import math
 from typing import List,Union,Iterable, Callable, Dict, Any
 import socket
@@ -7,6 +7,9 @@ import os
 from enum import Enum
 import glob
 from moviepy.editor import VideoFileClip
+
+
+fract:Callable = lambda num: num - math.floor(num) 
 
 class EventType(Enum):
     NULL = 0
@@ -98,6 +101,8 @@ class Color:
     COLOR_WHITE = (255, 255, 255, 255)
     COLOR_BLUE = (0, 12, 245, 255)
     COLOR_RED = (255, 45, 13, 255)
+    COLOR_CRIMSON_RED = (178, 34, 34)
+    COLOR_DARK_RED = (128, 0, 0)
 
 class GameWindow:
     pass
@@ -108,6 +113,7 @@ def get_ip_address():
     ip = s.getsockname()[0]
     s.close()
     return ip
+
 
 def get_text_dimensions(text_, font_name='Arial', font_size=16):
     # Create a Label for measuring
@@ -169,7 +175,7 @@ class Page(shapes.Rectangle):
                     ))
                     self.active_widget = None
             else:
-                print(self.widgets)
+                # print(self.widgets)
                 for widget in self.widgets:
                     if ((not widget.disabled) and widget.boundbox.contains(event.x, event.y)):
                         self.active_widget = widget
@@ -405,7 +411,7 @@ class Text(Widget):
         self._h = self._label.content_height
         self.boundbox = BoundBox(self, self.x, self.y, self.w, self.h)
         self.widget_resolve()
-        print(self.y, self.anchor_y)
+        # print(self.y, self.anchor_y)
     
     def widget_resolve(self):
         super().widget_resolve()
@@ -425,7 +431,7 @@ class Button(Widget):
             y:float, 
             _anchor=Anchor.ANCHOR_CENTER,
             font_size=16,
-            font_name="JetBrains Mono",
+            font_name="Consolas",
             font_color=Color.COLOR_WHITE,
             background_color=Color.COLOR_RED,
             background_border=0,
@@ -453,8 +459,8 @@ class Button(Widget):
         )
         self.anchor_x = x
         self.anchor_y = y
-        print("text::", self.w, self.h, self._label.content_height)
-        print("BoundBox::", self.boundbox)
+        # print("text::", self.w, self.h, self._label.content_height)
+        # print("BoundBox::", self.boundbox)
         self.w = self._label.content_width + padding_left + padding_right
         self.h = self._label.content_height + padding_top + padding_bottom
         self._text = text_
@@ -468,8 +474,11 @@ class Button(Widget):
         self._padding_left = padding_left
         self._padding_bottom = padding_bottom
         self._padding_right = padding_right
+        self._active_color = Color.COLOR_RED
+        self._click_color = Color.COLOR_WHITE
+        self._callerfun = lambda: None
         self.parent.update_queue[self] = self.update_this
-        print("print::", self._background_color)
+        # print("print::", self._background_color)
         self._background_rect = shapes.Rectangle(
             x=self.anchor_x,
             y=self.anchor_y,
@@ -481,7 +490,7 @@ class Button(Widget):
         )
         self.boundbox = BoundBox(self, self.anchor_x, self.anchor_y, self.w, self.h)
         self.widget_resolve()
-        print(self.boundbox)
+        # print(self.boundbox)
 
     @property
     def font_name(self):
@@ -571,36 +580,43 @@ class Button(Widget):
         self.boundbox.y = self.anchor_y
     
     def catch_event(self, event: Event):
-        print(self.boundbox, event)
+        # print(self.boundbox, event)
         inactive_color = self._background_color
-        active_color = Color.COLOR_BLACK
-        click_color = Color.COLOR_WHITE
+        active_color = self._active_color
+        click_color = self._click_color
         if (event.event_type == EventType.MOUSEENTER):
             self._background_rect.color = active_color
         if (event.event_type == EventType.MOUSEDOWN):
             self._background_rect.color = click_color
+            self._callerfun()
         if (event.event_type == EventType.MOUSELEAVE):
             self._background_rect.color = inactive_color
         if (event.event_type == EventType.MOUSEUP):
             self._background_rect.color = active_color
             
+            
         # return super().catch_event(event)
     def update_this(self, dt):
         ...
     
+    def onClick(self, callfn:Callable):
+        self._callerfun = callfn
         
         
 
 class GameWindow(window.Window):
-    def __init__(self, width, height):
-        super().__init__(width=width, height=height, resizable=True)
-        clock.schedule_interval(self.update, 1 / 60)
+    def __init__(self, width, height, *args, **kwargs):
+        super().__init__(width, height, "GameWindow", resizable=True, *args, **kwargs)
+        clock.schedule_interval(self.update, 1 / 120)
         self._network_ip = '127.0.0.1'
         self.pages:Union[List[Page], Iterable[Page]] = []
         self.batch = graphics.Batch()
         self.order = 0
+        self.counter = 0
         self.current_page = None
         self.loading_page = Page(self, 0, 0, 0, 0, color=Color.COLOR_BLUE)
+        self._fullscreen = False
+
 
     @property
     def network_ip(self)->str:
@@ -628,6 +644,11 @@ class GameWindow(window.Window):
         # print(button._label.content_height, button._label.content_width)
         # self.current_page.render()
         self.current_page.render()
+    
+    def on_key_press(self, symbol:int, modifiers:int):
+        super().on_key_press(symbol, modifiers)
+        if (symbol == key.F11):
+            self.set_fullscreen(not self.fullscreen)
     
     def add_page(self, page:Page):
         self.pages.append(page)
@@ -675,16 +696,26 @@ class GameWindow(window.Window):
 
 print(Color.COLOR_BLACK)
 
+videoCip = VideoFileClip('assets/loading.mp4')
+
+class InputBox(Widget):
+    def __init__(self, x, y, hint):
+        super().__init__(self, x, y, Anchor.ANCHOR_CENTER)
+        self.container = Rectangle()
+        
+
 
 class WelcomePage(Page):
     def __init__(self, win, welcome_img:image.ImageData, *args, **kwargs):
 
         super().__init__(win, 0, 0, 0, 0, 0, *args, **kwargs)
         self.batch=graphics.Batch()
-        self.video_clip = VideoFileClip('assets/loading.mp4')
-        self.counter = 0
+        self.video_clip: VideoFileClip = videoCip
+        self.parent.counter = 0
+        # print(dir(self.video_clip))
+        self.parent.height = (self.width*self.video_clip.h)//self.video_clip.w
         self.group = graphics.Group(self.order-1)
-        frame = self.video_clip.get_frame(self.counter)
+        frame = self.video_clip.get_frame(self.parent.counter)
         self.img = image.ImageData(self.video_clip.w, self.video_clip.h, 'RGB', frame.tobytes())
         self.imgsprite = sprite.Sprite(self.img, x=0, y=0, batch=self.batch, group=self.group)
         self.imgsprite.scale_x = self.height / self.img.height
@@ -711,8 +742,8 @@ class WelcomePage(Page):
 
     def update(self, dt):
         self.runtime += dt
-        self.progress_bar.x = self.width/2 + math.sin(math.pi*self.runtime*60.0/180)*300
-        self.progress_bar.bar.opacity = int(255*(1-abs(math.sin(math.pi*self.runtime*60.0/180))))
+        self.progress_bar.x = self.width/2 + math.sin((fract(self.runtime)-0.5)*math.pi)*300
+        self.progress_bar.bar.opacity = int(255*math.cos((fract(self.runtime)-0.5)*math.pi)*(math.floor(self.runtime)%2))
         self.progress_bar.widget_resolve()
         # print("updating")
         return super().update(dt)
@@ -737,34 +768,80 @@ class WelcomePage(Page):
         self.progress_bar.widget_resolve()
     
     def render(self):
-        self.counter += 1/self.video_clip.fps
-        if (self.counter > self.video_clip.duration):self.counter = 0
-        frame = self.video_clip.get_frame(self.counter)
-        self.img = image.ImageData(self.video_clip.w, self.video_clip.h, 'RGB', frame, pitch=-self.video_clip.w*3)
+        self.parent.counter += 1/self.video_clip.fps
+        if (self.parent.counter > self.video_clip.duration):self.parent.counter = 0
+        frame = self.video_clip.get_frame(self.parent.counter)
+        self.img = image.ImageData(self.video_clip.w, self.video_clip.h, 'RGB', frame.tobytes(), pitch=-self.video_clip.w*3)
         self.imgsprite.image = self.img
         self.batch.draw()
         # print("rendering")
 
     
+class LoginPage(Page):
+    def __init__(self, window:GameWindow, counter, *args, **kwargs):
+        # self.batch = graphics.Batch()
+        self.parent = window
+        super().__init__(window, 0, 0, 0, 0, *args, **kwargs)
+        self.batch = graphics.Batch()
+        self.video_clip = videoCip
+        frame = self.video_clip.get_frame(self.parent.counter)
+        img = image.ImageData(self.video_clip.w, self.video_clip.h, 'RGB', frame.tobytes(), pitch=-self.video_clip.w*3)
+        self.sprite = sprite.Sprite(img, 0, 0, group=graphics.Group(self.order), batch=self.batch)
+        self.sprite.scale = self.width/self.video_clip.w
+        self.btn1 = Button("Login", self, 1.5*self.width/4, self.height/2, background_color=Color.COLOR_BLACK)
+        self.btn1._active_color = Color.COLOR_CRIMSON_RED
+        self.btn1._click_color = Color.COLOR_DARK_RED
+        self.btn1.onClick(self.btn1Click)
+        self.btn2 = Button("Register", self, 2.5*self.width/4, self.height/2, background_color=Color.COLOR_BLACK)
+        self.btn2._active_color = Color.COLOR_CRIMSON_RED
+        self.btn2._click_color = Color.COLOR_DARK_RED
+    
+    def update(self, dt):
+        pass
+
+    def render(self):
+        self.parent.counter += 1/self.video_clip.fps
+        if (self.parent.counter > self.video_clip.duration) : self.parent.counter = 0
+        frame = self.video_clip.get_frame(self.parent.counter)
+        self.sprite.image = image.ImageData(self.video_clip.w, self.video_clip.h, 'RGB', frame.tobytes(), pitch=-self.video_clip.w*3)
+        self.batch.draw()
+    
+    def resize(self, width, height):
+        super().resize(width, height)
+        self.width = width
+        self.height = height
+        self.sprite.scale = self.width/self.video_clip.w
+        new_width = self.width
+        new_height = self.sprite.scale*self.video_clip.h
+        self.sprite.x = 0
+        self.sprite.y = (self.height - new_height)/2
+        self.btn1.x = 1.5*self.width/4
+        self.btn1.y = self.height/2
+        self.btn2.x = 2.5*self.width/4
+        self.btn2.y = self.height/2
+        self.btn1.widget_resolve()
+        self.btn2.widget_resolve()
+    
+    def btn1Click(self):
+        "Clear func is called"
+        self.parent.set_page(welcomePage)
+
+        # print("yes")
     
 
 
 
-img = image.load(os.path.join("assets", "loading.bmp"))
-width = 1400
-ratio = img.height/img.width
-window = GameWindow(width, int(width*ratio))
+# img = image.load(os.path.join("assets", "loading.bmp"))
+width = 1000
+ratio = videoCip.h/videoCip.w
+window = GameWindow(width, int(ratio*width), vsync=False, fullscreen=False)
 
-# resized_image = image.ImageData(
-#     window.width//2, 
-#     window.height//2,
-#     'RGB', 
-#     img.get_image_data().get_data('RGB', img.width * 3), 
-#     pitch=img.width * 3
-# )
-
-page = WelcomePage(window, img)
+page = LoginPage(window, 0)
+welcomePage = WelcomePage(window, None)
 page.add()
+welcomePage.add()
+# window.set_fullscreen(True)
+
 # button = Button("Hello", page,page.width/2 ,page.height/2, _anchor=Anchor.ANCHOR_CENTER)
 # label = Text("Connecting to server", page, 0, 0, _anchor=Anchor.ANCHOR_LEFT)
 # button2 = Button("Hello", page,, _anchor=Anchor.ANCHOR_CENTER)

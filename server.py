@@ -52,7 +52,7 @@ class Server:
         self.batchsize = 10
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        # self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
         self.socket.setblocking(False)
         self.isRunning = True
         try:
@@ -69,22 +69,38 @@ class Server:
         readables : List[socket.socket]
         writables : List[socket.socket]
         exceptables: List[socket.socket]
-        
+        removeindex = set()
         while self.isRunning:
             readables, writables, exceptables = select.select(
                 inputs,[],[], 0
             )
-            for readable in readables:
+            # print(readables)
+            removeindex.clear()
+            for index, readable in enumerate(readables):
                 if (readable is self.socket):
                     dev, addr = readable.accept()
                     inputs.add(dev)
-                    print(dev)
-                    dev.sendall('Length:34 GAY'.encode())
+                    dev.sendall('Length:34'.encode())
                 else:
                     print("Some clients want to send message")
-                    print(readable.recv(1024))
-            if len(writables):
-                print(writables)
+                    try:
+                        print(readable.recv(1024))
+                    except ConnectionResetError as E:
+                        print(str(E))
+                        inputs.remove(readable)
+                        removeindex.add(index)
+                    except ConnectionAbortedError as E:
+                        inputs.remove(readable)
+                        print(str(E))
+                        removeindex.add(index)
+
+
+            oldoffset = 0
+
+            for removable in removeindex:
+                readables.pop(removable+oldoffset)
+                oldoffset -= 1
+
 
     def __del__(self):
         self.socket.close()
