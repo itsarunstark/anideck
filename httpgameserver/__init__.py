@@ -106,7 +106,11 @@ class Sever:
         self.pooling_socks.add(sock)
     
     def read_bytes(self,sock:socket.socket):
-        data = sock.recv(1)
+        try:
+            data = sock.recv(1)
+        except (ConnectionAbortedError, ConnectionRefusedError, ConnectionResetError) as e:
+            logger.error(e.strerror)
+            data = b''
         if not len(data):
             if sock in self.queued_connections:
                 del self.queued_connections[sock]
@@ -133,7 +137,7 @@ class Sever:
                 msg,length = self.encode_msg(PROTOCOLS.PROTO_REJ, "datapacked length mismatched please try again")
                 self.senddata(sock, msg, length)
             else:
-                msg,length = self.encode_msg(PROTOCOLS.PROTO_ACK, "data accepted, thankyou")
+                # msg,length = self.encode_msg(PROTOCOLS.PROTO_ACK, "data accepted, thankyou")
                 self.register_function(self, sock, msg)
     
     def senddata(self,sock:socket.socket, msg:Union[bytes,bytearray], length):
@@ -149,7 +153,11 @@ class Sever:
 
     
     def recv_bytes(self,sock)->Tuple[bytearray, bool]:
-        lengthpack = sock.recv(2)
+        try:
+            lengthpack = sock.recv(2)
+        except:
+            lengthpack = b'\x00\x00'
+        logger.debug("lengthpacket::%a"%lengthpack)
         datalength = int.from_bytes(lengthpack, byteorder='little', signed=False)
         logger.debug("DATALENGTH TO ACCEPT:%d"%datalength)
         protodata = bytearray(datalength)
@@ -158,7 +166,10 @@ class Sever:
         tries = 3
         
         while(dt<datalength and data_incoming):
-            incomedata = sock.recv(self.chunks)
+            try:
+                incomedata = sock.recv(self.chunks)
+            except BlockingIOError:
+                incomedata = b''
             dLength = len(incomedata)
             if (not dLength):
                 if (tries>0):
@@ -168,7 +179,7 @@ class Sever:
                     protodata.zfill(datalength)
                     dt = 0
                     data_incoming = False
-                    return protodata
+                    
             protodata[dt:dt+dLength] = incomedata
             dt += dLength
         return (protodata, data_incoming)
@@ -184,6 +195,11 @@ class Sever:
                 self.read_bytes(readable)
     
     def encode_msg(self, proto:PROTOCOLS, msg:Union[str,bytes,bytearray])->Tuple[bytes,int]:
+        """
+        @params proto:PROTOCOL
+        @params msg:Union[str,bytes,bytearray]
+        @return encoded data , length of data 
+        """
         protocolbyte = PROTOCOLS.to_bytes(proto)
         enc = msg if (isinstance(msg, bytes) or isinstance(msg,bytearray)) else msg.encode()
         dLength = len(enc)
@@ -210,10 +226,32 @@ class GameServer:
             server.senddata(
                 sock, *self.encode_game_msg(GameMsg.MSG_BAD_FORMAT, "Bad Format Failed")
             )
-        else:
+            return
+        valid,data = self.extract_auth(msg)
+        if (not valid):
             server.senddata(
-                sock, *self.encode_game_msg(GameMsg.MSG_OK, "REQUEST_ACCEPTED")
+                sock, *self.encode_game_msg(GameMsg.MSG_INVALID_DATA, "Invalid Data is recived auth Faild")
             )
+            return
+        logger.info("username:%s pass:%s"%data)
+        server.senddata(
+            sock, *self.encode_game_msg(GameMsg.MSG_OK, "REQUEST_ACCEPTED")
+        )
+        
+    
+    def extract_auth(self, bytearr:Union[bytes,bytearray])->Tuple[bool, Tuple[str,Union[bytes,bytearray]]]:
+        """
+        @params bytearr : array bytes
+        @return Tuple[bool, Tuple[str, str]] if valid auth, username, password
+        """
+        userlength = int.from_bytes(bytearr[:2], byteorder='little', signed=False)
+        passlength = int.from_bytes(bytearr[2+userlength:4+userlength], byteorder='little', signed=False)
+        username = bytearr[2:2+userlength].decode()
+        userpass = bytearr[4+userlength:4+userlength+passlength]
+        if (not ((userlength and passlength) and len(username) and len(userpass))):
+            return False,(username, userpass)
+        return True, (username, userpass)
+
     
     def encode_game_msg(self,msgProto:GameMsg, data:Union[bytes,str,bytearray])->Tuple[bytes,int]:
         # if isinstance()

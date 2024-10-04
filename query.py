@@ -1,0 +1,1 @@
+ACTIVE_USER = "SELECT userId FROM Users WHERE loginUser=1"

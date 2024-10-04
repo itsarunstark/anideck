@@ -32,6 +32,7 @@ class GameMsg(Flag):
     MSG_OK = 0x02
     MSG_INTERNAL_ERROR = 0x04
     MSG_BUSY = 0x08
+    MSG_INVALID_DATA = 0x10
 
 if __name__ == '__main__':
     print(PROTOCOLS.to_bytes(PROTOCOLS.from_bytes(b'\x1c')))
