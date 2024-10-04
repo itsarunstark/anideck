@@ -4,7 +4,7 @@ import sys
 import time
 import logging
 from typing import List
-
+from .network import PROTOCOLS
 def get_ip_address():
     s = socket.socket()
     s.connect(('1.1.1.1', 80))
@@ -12,35 +12,7 @@ def get_ip_address():
     s.close()
     return ip
 
-class ColorFormatter(logging.Formatter):
-    red = '\x1b[31;1m'
-    green = '\x1b[32;0m'
-    yellow = '\x1b[33;0m'
-    redHigh = '\x1b[31;3m'
-    blue = '\x1b[35;3m'
-    redBack = '\x1b[41;3m'
-    reset = '\x1b[0m'
-    loggerFormat = "%(asctime)s:%(name)s:%(levelname)s::%(message)s (%(filename)s:%(lineno)d)"
-    COLORS = {
-        logging.DEBUG : blue + loggerFormat + reset, 
-        logging.WARNING : yellow + loggerFormat + reset,
-        logging.ERROR : red + loggerFormat + reset,
-        logging.CRITICAL : redHigh + loggerFormat + reset,
-        logging.FATAL : redBack + loggerFormat + reset,
-        logging.INFO : green + loggerFormat + reset
-    }
-    def format(self, record):
-        log_fmt = self.COLORS.get(record.levelno)
-        formatter = logging.Formatter(log_fmt)
-        return formatter.format(record)
-    
 
-logger = logging.getLogger('Game Server')
-logger.setLevel(logging.DEBUG)
-handler = logging.StreamHandler()
-handler.setLevel(logger.level)
-handler.setFormatter(ColorFormatter())
-logger.addHandler(handler)
 
 
 
