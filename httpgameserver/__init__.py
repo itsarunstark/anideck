@@ -9,6 +9,8 @@ from network import PROTOCOLS, GameMsg
 
 import sqlite3
 
+to_bytes = lambda x:x.to_bytes(length=2, byteorder='little', signed=False)
+from_bytes = lambda x:int.from_bytes(x, byteorder='little', signed=False)
 
 
 class ColorFormatter(logging.Formatter):
@@ -112,33 +114,24 @@ class Sever:
             logger.error(e.strerror)
             data = b''
         if not len(data):
-            if sock in self.queued_connections:
-                del self.queued_connections[sock]
-
-            if sock in self.pooling_socks:
-                self.pooling_socks.remove(sock)
+            if sock in self.queued_connections: del self.queued_connections[sock]
+            if sock in self.pooling_socks: self.pooling_socks.remove(sock)
             logger.info("lost connection:: [{}]".format(sock.fileno()))
             sock.close()
             return
         
+        proto = PROTOCOLS.from_bytes(data)
         if sock in self.queued_connections:
-            # time.sleep(1)
-            msg = data
-            proto = PROTOCOLS.from_bytes(msg)
-            if (PROTOCOLS.PROTO_ACK&proto):
+            
+            if (proto&PROTOCOLS.PROTO_ACK):
                 logger.info("Connection verified timelimit::%0.4f", time.time() - self.queued_connections[sock])
+                sock.send(PROTOCOLS.to_bytes(PROTOCOLS.PROTO_ACK))
                 del self.queued_connections[sock]
         
-        PROTOCOL = PROTOCOLS.from_bytes(data)
-        if (PROTOCOL & PROTOCOLS.PROTO_REGISTER):
+        elif (proto & PROTOCOLS.PROTO_REGISTER):
             msg,valid = self.recv_bytes(sock)
             print("message::", msg)
-            if not valid:
-                msg,length = self.encode_msg(PROTOCOLS.PROTO_REJ, "datapacked length mismatched please try again")
-                self.senddata(sock, msg, length)
-            else:
-                # msg,length = self.encode_msg(PROTOCOLS.PROTO_ACK, "data accepted, thankyou")
-                self.register_function(self, sock, msg)
+            if valid: self.register_function(self, sock, msg)
     
     def senddata(self,sock:socket.socket, msg:Union[bytes,bytearray], length):
         sentLength = 0
@@ -179,9 +172,14 @@ class Sever:
                     protodata.zfill(datalength)
                     dt = 0
                     data_incoming = False
-                    
             protodata[dt:dt+dLength] = incomedata
             dt += dLength
+            logger.info("data_ack:%d"%data_incoming)
+        sock.send(
+            PROTOCOLS.to_bytes(
+                PROTOCOLS.PROTO_ACK if data_incoming else PROTOCOLS.PROTO_REJ 
+            )
+        )
         return (protodata, data_incoming)
 
 
@@ -237,7 +235,6 @@ class GameServer:
         server.senddata(
             sock, *self.encode_game_msg(GameMsg.MSG_OK, "REQUEST_ACCEPTED")
         )
-        
     
     def extract_auth(self, bytearr:Union[bytes,bytearray])->Tuple[bool, Tuple[str,Union[bytes,bytearray]]]:
         """
@@ -257,6 +254,7 @@ class GameServer:
         # if isinstance()
         dData = data if (isinstance(data, bytes) or isinstance(data,bytearray)) else data.encode()
         proto = PROTOCOLS.to_bytes(msgProto)
+        # dLenght = 
         return server.encode_msg(PROTOCOLS.PROTO_ACK, proto+dData)
         # self.database = 
 
@@ -269,7 +267,7 @@ server.bind_port()
 server.listen_port()
 to_remove:Set[socket.socket] = set()
 game= GameServer(server)
-while True: 
+while True:
     t0 = time.time()
     server.pool()
     to_remove.clear()
