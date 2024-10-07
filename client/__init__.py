@@ -2,6 +2,8 @@ import socket
 from typing import Tuple, List, Set, Union, Callable
 from network import PROTOCOLS
 import hashlib
+import sqlite3
+import os
 
 to_bytes:Callable = lambda x:x.to_bytes(length=2, byteorder='little', signed=False)
 from_bytes:Callable = lambda x:int.from_bytes(x, byteorder='little', signed=False)
@@ -56,22 +58,32 @@ class Client:
         while (start < datalength):
             start += self.clientsock.send(data[start:start+self.chunks])
         return start
-    
-    def recv_stream(self)->Union[bytes,bytearray]:
-        bytedata = bytearray()
-        ack_state = self.clientsock.recv(1)
-        proto = PROTOCOLS.from_bytes(ack_state)
-        if(proto & PROTOCOLS.PROTO_ACK):
-            datalength = from_bytes(self.clientsock.recv(2))
-            print(datalength)
-            start = 0
-            tries = 3
-            while (start < datalength and tries):
+
+    def recv_bytes(self, bytedata:bytearray)->bytearray:
+        datalength = from_bytes(self.clientsock.recv(2))
+        print(datalength)
+        start = 0
+        tries = 3
+        while (start < datalength and tries):
                 content = self.clientsock.recv(self.chunks)
                 if (not len(content)): tries -= 1
                 start += len(content)
                 bytedata.extend(content)
-        return bytedata
+    
+    def recv_stream(self)->Union[PROTOCOLS,bytearray]:
+        bytedata = bytearray()
+        ack_state = self.clientsock.recv(1)
+        accepted = PROTOCOLS.PROTO_REJ
+        proto = PROTOCOLS.from_bytes(ack_state)
+        if(proto & PROTOCOLS.PROTO_ACK):
+            accepted = True
+            self.recv_bytes(bytedata)
+            accepted = PROTOCOLS.PROTO_ACK
+        elif (proto & PROTOCOLS.PROTO_REJ):
+            accepted = PROTOCOLS.PROTO_REJ
+            self.recv_bytes(bytedata)
+        return (accepted, bytedata)
+        
 
     def decode_data(self, data:Union[bytes,bytearray])->List[bytes]:
         lst = []
@@ -91,11 +103,36 @@ class Client:
         return PROTOCOLS.from_bytes(self.clientsock.recv(1))
     
 
+class ClientDB:
+    def __init__(self, dbNmae):
+        self.dbName = dbNmae
+        self.create_tables = False
+        self.table_query_script_file = "./userdbschema.sql"
+        if not os.path.exists(self.dbName):
+            print("Database does not exist, creating one now")
+            self.create_tables = True
+        self.db = sqlite3.connect(self.dbName)
+        self.cursor = self.db.cursor()
+        self.init_tables()
+    
+    def get_userinfo(self, username:str):
+        pass
+
+
+    
+    def init_tables(self):
+        if self.create_tables:
+            with open(self.table_query_script_file, "r") as query_file:
+                self.cursor.executescript(query_file.read())
+                query_file.close()
+        
+        
     
 
 class GameUser:
-    def __init__(self,client:Client):
+    def __init__(self,clientusername:str, client:Client, client_db:ClientDB):
         self.client = client
+        self.clientdb = client_db
     
     def register(self, username:str, password:str)->bool:
         passencoded = hashlib.sha256(password.encode()).digest()
@@ -109,9 +146,9 @@ class GameUser:
         
 
     
-
+clientDB = ClientDB("manu.db")
 client = Client('127.0.0.1', 65432)
 print(client.connect_to_server())
-gameuser = GameUser(client)
+gameuser = GameUser(None, client, client_db=clientDB)
 gameuser.register("hello","sakshi")
 # print(client.clientsock.recv(1))

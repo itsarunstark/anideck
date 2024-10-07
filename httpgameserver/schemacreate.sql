@@ -1,0 +1,22 @@
+DROP TABLE IF EXISTS Users;
+DROP TABLE IF EXISTS Cookies;
+DROP TABLE IF EXISTS Games;
+DROP TABLE IF EXISTS ActivePlayers;
+
+
+
+CREATE TABLE Users(
+    userId BIGINT PRIMARY KEY,
+    userName TEXT NOT NULL,
+    userPass TEXT NOT NULL,
+    userAvatar BLOB DEFAULT NULL
+    );
+
+CREATE TABLE Cookies(
+    cookieId BIGINT PRIMARY KEY,
+    userId BIGINT NOT NULL,
+    cookieNmae TEXT NOT NULL,
+    cookieValue TEXT NOT NULL,
+    created DATE NOT NULL DEFAULT CURRENT_DATE,
+    expired DATE NOT NULL DEFAULT CURRENT_DATE
+    );

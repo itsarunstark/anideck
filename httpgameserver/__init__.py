@@ -5,8 +5,8 @@ import time
 from typing import Union, List, Set, Tuple
 import os
 from network import PROTOCOLS, GameMsg
-
-
+import uuid
+import struct
 import sqlite3
 
 to_bytes = lambda x:x.to_bytes(length=2, byteorder='little', signed=False)
@@ -232,10 +232,34 @@ class GameServer:
             )
             return
         logger.info("username:%s pass:%s"%data)
-        server.senddata(
-            sock, *self.encode_game_msg(GameMsg.MSG_OK, "REQUEST_ACCEPTED")
-        )
-    
+        try:
+
+            self.cursor.execute("SELECT userId FROM Users WHERE userName=? AND userPass=?", (data[0], data[1].hex()))
+            logger.debug("finished till here")
+            crossdata = self.cursor.fetchall()
+            if (len(crossdata)):
+                server.senddata(
+                    sock, *self.encode_game_msg(GameMsg.MSG_USER_EXISTS, "User Exists")
+                )
+                return
+            userid = from_bytes(struct.pack("<d", time.time_ns()))
+            logger.debug("current id %d"%userid)
+            self.cursor.execute(
+                "INSERT INTO Users(userId, userName, userPass) values(?, ?, ?)",
+                (userid, data[0], data[1].hex())
+            )
+            self.database.commit()
+            server.senddata(
+                sock, *self.encode_game_msg(GameMsg.MSG_OK, "REQUEST_ACCEPTED")
+            )
+        except Exception as serverError:
+            error = server.encode_msg(PROTOCOLS.PROTO_REJ, str(serverError))
+            logger.error(error[0])
+            server.senddata(
+                sock, *error
+            )
+
+
     def extract_auth(self, bytearr:Union[bytes,bytearray])->Tuple[bool, Tuple[str,Union[bytes,bytearray]]]:
         """
         @params bytearr : array bytes
