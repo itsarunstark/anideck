@@ -75,11 +75,11 @@ class Client:
         ack_state = self.clientsock.recv(1)
         accepted = PROTOCOLS.PROTO_REJ
         proto = PROTOCOLS.from_bytes(ack_state)
-        if(proto & PROTOCOLS.PROTO_ACK):
+        if(proto == PROTOCOLS.PROTO_ACK):
             accepted = True
             self.recv_bytes(bytedata)
             accepted = PROTOCOLS.PROTO_ACK
-        elif (proto & PROTOCOLS.PROTO_REJ):
+        elif (proto == PROTOCOLS.PROTO_REJ):
             accepted = PROTOCOLS.PROTO_REJ
             self.recv_bytes(bytedata)
         return (accepted, bytedata)
@@ -140,9 +140,22 @@ class GameUser:
         data_pack = self.client.create_send_packet(PROTOCOLS.PROTO_REGISTER, content)
         self.client.send_stream(data_pack[:])
         ack_status:PROTOCOLS = self.client.query_status()
-        if (ack_status & PROTOCOLS.PROTO_ACK):
+        if (ack_status == PROTOCOLS.PROTO_ACK):
             recv_info = self.client.recv_stream()
             print(recv_info)
+    
+    def login(self, username:str, password:str)->bool:
+        passencoded = hashlib.sha256(password.encode()).digest()
+        content = self.client.enocode_data(username, passencoded)
+        data_pack = self.client.create_send_packet(PROTOCOLS.PROTO_LOGIN_CONV, content)
+        self.client.send_stream(data_pack)
+        ack_status:PROTOCOLS = self.client.query_status()
+        if (ack_status == PROTOCOLS.PROTO_ACK):
+            print(self.client.recv_stream())
+
+
+
+        
         
 
     
@@ -150,5 +163,5 @@ clientDB = ClientDB("manu.db")
 client = Client('127.0.0.1', 65432)
 print(client.connect_to_server())
 gameuser = GameUser(None, client, client_db=clientDB)
-gameuser.register("hello","sakshi")
+gameuser.login("hello","saksh")
 # print(client.clientsock.recv(1))

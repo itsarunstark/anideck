@@ -77,8 +77,8 @@ class Sever:
         self.queued_connections = {}
         self.verified_connections = {}
         self.chunks = 1024
-        self.register_function = lambda server,sock,msg:print(msg)
-
+        self.register_function = lambda sock,msg:print(msg)
+        self.login_user_conv = lambda sock,msg: print(msg)
     
     def socket_configure_default_options(self):
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, True)
@@ -123,15 +123,23 @@ class Sever:
         proto = PROTOCOLS.from_bytes(data)
         if sock in self.queued_connections:
             
-            if (proto&PROTOCOLS.PROTO_ACK):
+            if (proto == PROTOCOLS.PROTO_ACK):
                 logger.info("Connection verified timelimit::%0.4f", time.time() - self.queued_connections[sock])
                 sock.send(PROTOCOLS.to_bytes(PROTOCOLS.PROTO_ACK))
                 del self.queued_connections[sock]
         
-        elif (proto & PROTOCOLS.PROTO_REGISTER):
+        elif (proto == PROTOCOLS.PROTO_REGISTER):
             msg,valid = self.recv_bytes(sock)
             print("message::", msg)
-            if valid: self.register_function(self, sock, msg)
+            if valid: self.register_function(sock, msg)
+            else: self.senddata(sock, self.encode_msg(PROTOCOLS.PROTO_FAILED, "Data Packet Null"))
+        
+        
+        
+        elif (proto == PROTOCOLS.PROTO_LOGIN_CONV):
+            msg, valid = self.recv_bytes(sock)
+            if valid: self.login_user_conv(sock, msg)
+            else: self.senddata(sock, self.encode_msg(PROTOCOLS.PROTO_FAILED, "Null Byte Recieved"))
     
     def senddata(self,sock:socket.socket, msg:Union[bytes,bytearray], length):
         sentLength = 0
@@ -215,47 +223,55 @@ class Sever:
 class GameServer:
     def __init__(self, server):
         self.userdatabase = "sakshi.db"
+        self.create = True
+        if not os.path.exists(self.userdatabase):
+            self.create = True
         self.database = sqlite3.connect(self.userdatabase)
         self.cursor = self.database.cursor()
+        if self.create:
+            with open(os.path.join(os.path.dirname(__file__), "schemacreate.sql")) as filequery:
+                self.cursor.executescript(filequery.read())
+                filequery.close()
         self.server = server
         self.server.register_function = self.register_user
-    def register_user(self,server:Sever,sock:socket.socket,msg:bytearray):
+        self.server.login_user_conv = self.login_user_cred
+    
+
+
+    def register_user(self,sock:socket.socket,msg:bytearray):
         if (len(msg) < 10):
-            server.senddata(
+            self.server.senddata(
                 sock, *self.encode_game_msg(GameMsg.MSG_BAD_FORMAT, "Bad Format Failed")
             )
             return
         valid,data = self.extract_auth(msg)
         if (not valid):
-            server.senddata(
+            self.server.senddata(
                 sock, *self.encode_game_msg(GameMsg.MSG_INVALID_DATA, "Invalid Data is recived auth Faild")
             )
             return
         logger.info("username:%s pass:%s"%data)
         try:
-
-            self.cursor.execute("SELECT userId FROM Users WHERE userName=? AND userPass=?", (data[0], data[1].hex()))
-            logger.debug("finished till here")
+            self.cursor.execute("SELECT userId FROM Users WHERE userName=?", (data[0],))
             crossdata = self.cursor.fetchall()
             if (len(crossdata)):
-                server.senddata(
+                self.server.senddata(
                     sock, *self.encode_game_msg(GameMsg.MSG_USER_EXISTS, "User Exists")
                 )
                 return
             userid = from_bytes(struct.pack("<d", time.time_ns()))
-            logger.debug("current id %d"%userid)
             self.cursor.execute(
                 "INSERT INTO Users(userId, userName, userPass) values(?, ?, ?)",
                 (userid, data[0], data[1].hex())
             )
             self.database.commit()
-            server.senddata(
+            self.server.senddata(
                 sock, *self.encode_game_msg(GameMsg.MSG_OK, "REQUEST_ACCEPTED")
             )
         except Exception as serverError:
             error = server.encode_msg(PROTOCOLS.PROTO_REJ, str(serverError))
             logger.error(error[0])
-            server.senddata(
+            self.server.senddata(
                 sock, *error
             )
 
@@ -278,12 +294,45 @@ class GameServer:
         # if isinstance()
         dData = data if (isinstance(data, bytes) or isinstance(data,bytearray)) else data.encode()
         proto = PROTOCOLS.to_bytes(msgProto)
-        # dLenght = 
         return server.encode_msg(PROTOCOLS.PROTO_ACK, proto+dData)
-        # self.database = 
+    
+    def login_user_cred(self, sock:socket.socket, msg:Union[bytearray, bytes]):
+        logger.debug(msg)
+        if (len(msg) < 10):
+            self.server.senddata(
+                sock, *self.encode_game_msg(GameMsg.MSG_BAD_FORMAT, "Bad Format Failed")
+            )
+            return
+        valid, data = self.extract_auth(msg)
+        if(not valid):
+            self.server.senddata(
+                sock, *self.encode_game_msg(GameMsg.MSG_BAD_FORMAT, "Wrongly configured Data")
+            )
+            return
+        
+        username = data[0]
+        password = data[1].hex()
+        self.cursor.execute("SELECT userId FROM Users WHERE userName=?", (username,))
+        userId = self.cursor.fetchone()
+        if (userId is None):
+            self.server.senddata(
+                sock, *self.encode_game_msg(GameMsg.MSG_USER_NOT_EXIST, "User does not exists")
+            )
+            return
+        userId = userId[0]
+        self.cursor.execute("SELECT userPass FROM Users WHERE userId=?", (userId,))
+        correctPass = self.cursor.fetchone()[0]
+        if (correctPass == password):
+            self.validate_user()
+        print(valid, data)
 
-
-
+class CookieManager:
+    def __init__(self, database:sqlite3.Connection):
+        self.database = database
+        self.cursor = self.database.cursor()
+    
+    def fetch_existsing_cookie(self, userId):
+        self.cursor.execute("SELECT * from Cookies")
 
 VERIFICATION_TIMEOUT = 0.500
 server = Sever('127.0.0.1', 65432)

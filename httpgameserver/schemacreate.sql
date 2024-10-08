@@ -7,7 +7,7 @@ DROP TABLE IF EXISTS ActivePlayers;
 
 CREATE TABLE Users(
     userId BIGINT PRIMARY KEY,
-    userName TEXT NOT NULL,
+    userName TEXT UNIQUE NOT NULL,
     userPass TEXT NOT NULL,
     userAvatar BLOB DEFAULT NULL
     );
@@ -18,5 +18,6 @@ CREATE TABLE Cookies(
     cookieNmae TEXT NOT NULL,
     cookieValue TEXT NOT NULL,
     created DATE NOT NULL DEFAULT CURRENT_DATE,
-    expired DATE NOT NULL DEFAULT CURRENT_DATE
+    expired DATE NOT NULL DEFAULT CURRENT_DATE,
+    FOREIGN KEY (userId) REFERENCES Users(userId)
     );
