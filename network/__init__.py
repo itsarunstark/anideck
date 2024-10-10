@@ -35,12 +35,17 @@ class PROTOCOLS(Flag):
 class GameMsg(Flag):
     MSG_BAD_FORMAT = 0x01
     MSG_OK = 0x02
-    MSG_INTERNAL_ERROR = 0x04
-    MSG_BUSY = 0x08
-    MSG_INVALID_DATA = 0x10
-    MSG_WRONG_CRED = 0x20
-    MSG_USER_EXISTS = 0x40
-    MSG_USER_NOT_EXIST = 0x50
+    MSG_INTERNAL_ERROR = 0x03
+    MSG_BUSY = 0x04
+    MSG_INVALID_DATA = 0x05
+    MSG_WRONG_CRED = 0x06
+    MSG_USER_EXISTS = 0x07
+    MSG_USER_NOT_EXIST = 0x08
+    MSG_COOKIE_RESPONSE = 0x09
+    MSG_LOGIN_FAILED = 0x10
+    MSG_LOGIN_SUCCESS = 0x11
+    MSG_REGISTER_SUCCESS = 0x12
+    MSG_REGISTER_FAILED = 0x13
 
 
 class LoginOptions(Flag):
@@ -51,6 +56,24 @@ class LoginOptions(Flag):
     LOGIN_COOKIE = 0x04
     LOGIN_ARG = 0x05
     LOGIN_VALUE = 0x06
+
+class CookieOpt(Flag):
+    COOKIE_START = 0x99
+    COOKIE_ID = 0x30
+    COOKIE_NAME = 0x31
+    COOKIE_VALUE = 0x32
+    COOKIE_EXPIRED = 0x33
+    COOKIE_CREATED = 0x34
+    COOKIE_USER_ID = 0x35
+    COOKIE_END = 0x00
+
+    def to_bytes(self):
+        return self.value.to_bytes()
+    
+    @staticmethod
+    def from_bytes(x:bytes):
+        data = int.from_bytes(x)
+        return CookieOpt(data)
 
 if __name__ == '__main__':
     print(PROTOCOLS.to_bytes(PROTOCOLS.from_bytes(b'\x1c')))

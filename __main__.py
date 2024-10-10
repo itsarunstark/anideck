@@ -5,4 +5,4 @@ l = list(Deck)
 
 print(l)
 random.shuffle(l)
-print(l)
+print("this is text")

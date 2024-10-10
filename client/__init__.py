@@ -4,6 +4,7 @@ from network import PROTOCOLS
 import hashlib
 import sqlite3
 import os
+import sys
 
 to_bytes:Callable = lambda x:x.to_bytes(length=2, byteorder='little', signed=False)
 from_bytes:Callable = lambda x:int.from_bytes(x, byteorder='little', signed=False)
@@ -163,5 +164,9 @@ clientDB = ClientDB("manu.db")
 client = Client('127.0.0.1', 65432)
 print(client.connect_to_server())
 gameuser = GameUser(None, client, client_db=clientDB)
-gameuser.login("hello","saksh")
+if (len(sys.argv) > 1):
+    if (sys.argv[1] == 'login'):
+        gameuser.login("hello","sakshi")
+    else:
+        gameuser.register("hello", "sakshi")
 # print(client.clientsock.recv(1))

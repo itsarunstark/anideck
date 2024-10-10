@@ -15,7 +15,7 @@ CREATE TABLE Users(
 CREATE TABLE Cookies(
     cookieId BIGINT PRIMARY KEY,
     userId BIGINT NOT NULL,
-    cookieNmae TEXT NOT NULL,
+    cookieName TEXT NOT NULL,
     cookieValue TEXT NOT NULL,
     created DATE NOT NULL DEFAULT CURRENT_DATE,
     expired DATE NOT NULL DEFAULT CURRENT_DATE,

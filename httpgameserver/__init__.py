@@ -2,16 +2,16 @@ import socket
 import select
 import logging
 import time
-from typing import Union, List, Set, Tuple
+from typing import Union, List, Set, Tuple, Optional, Any, Dict, ByteString
 import os
-from network import PROTOCOLS, GameMsg
+from network import PROTOCOLS, GameMsg, CookieOpt
 import uuid
 import struct
 import sqlite3
-
-to_bytes = lambda x:x.to_bytes(length=2, byteorder='little', signed=False)
-from_bytes = lambda x:int.from_bytes(x, byteorder='little', signed=False)
-
+import hashlib
+import datetime
+from network.cookiejar import Cookie, CookieManager
+from network.tools import to_bytes, from_bytes, encode_msg
 
 class ColorFormatter(logging.Formatter):
     red = '\x1b[31;3m'
@@ -64,8 +64,8 @@ class User(object):
         logger.warning("Not yet implemented")
 
 
-    
-class Sever:
+
+class Server:
     def __init__(self,addr:Union[str,bytes], port:int=65432):
         self.addr:Union[str,bytes] = addr
         self.port:int = port
@@ -215,6 +215,9 @@ class Sever:
 
     
     def remove_queued(self,sock:socket.socket)->None:
+        """
+        @deprecated
+        """
         del self.queued_connections[sock]
         self.pooling_socks.remove(sock)
 
@@ -223,20 +226,19 @@ class Sever:
 class GameServer:
     def __init__(self, server):
         self.userdatabase = "sakshi.db"
-        self.create = True
+        self.createDatabase = False
         if not os.path.exists(self.userdatabase):
-            self.create = True
+            self.createDatabase = True
         self.database = sqlite3.connect(self.userdatabase)
         self.cursor = self.database.cursor()
-        if self.create:
+        if self.createDatabase:
             with open(os.path.join(os.path.dirname(__file__), "schemacreate.sql")) as filequery:
                 self.cursor.executescript(filequery.read())
                 filequery.close()
-        self.server = server
+        self.server:Server = server
         self.server.register_function = self.register_user
         self.server.login_user_conv = self.login_user_cred
-    
-
+        self.cookieManager = CookieManager(self.database)
 
     def register_user(self,sock:socket.socket,msg:bytearray):
         if (len(msg) < 10):
@@ -247,7 +249,7 @@ class GameServer:
         valid,data = self.extract_auth(msg)
         if (not valid):
             self.server.senddata(
-                sock, *self.encode_game_msg(GameMsg.MSG_INVALID_DATA, "Invalid Data is recived auth Faild")
+                sock, *self.encode_game_msg(GameMsg.MSG_INVALID_DATA, "Invalid Data is recived, auth Faild")
             )
             return
         logger.info("username:%s pass:%s"%data)
@@ -256,17 +258,17 @@ class GameServer:
             crossdata = self.cursor.fetchall()
             if (len(crossdata)):
                 self.server.senddata(
-                    sock, *self.encode_game_msg(GameMsg.MSG_USER_EXISTS, "User Exists")
+                    sock, *self.encode_game_msg(GameMsg.MSG_REGISTER_FAILED, "User Exists")
                 )
                 return
-            userid = from_bytes(struct.pack("<d", time.time_ns()))
+            userid = from_bytes(struct.pack("<d", time.time_ns())[:6])
             self.cursor.execute(
                 "INSERT INTO Users(userId, userName, userPass) values(?, ?, ?)",
                 (userid, data[0], data[1].hex())
             )
             self.database.commit()
             self.server.senddata(
-                sock, *self.encode_game_msg(GameMsg.MSG_OK, "REQUEST_ACCEPTED")
+                sock, *self.encode_game_msg(GameMsg.MSG_REGISTER_SUCCESS, "REQUEST_ACCEPTED")
             )
         except Exception as serverError:
             error = server.encode_msg(PROTOCOLS.PROTO_REJ, str(serverError))
@@ -289,12 +291,16 @@ class GameServer:
             return False,(username, userpass)
         return True, (username, userpass)
 
+
+
     
     def encode_game_msg(self,msgProto:GameMsg, data:Union[bytes,str,bytearray])->Tuple[bytes,int]:
         # if isinstance()
         dData = data if (isinstance(data, bytes) or isinstance(data,bytearray)) else data.encode()
         proto = PROTOCOLS.to_bytes(msgProto)
         return server.encode_msg(PROTOCOLS.PROTO_ACK, proto+dData)
+    
+
     
     def login_user_cred(self, sock:socket.socket, msg:Union[bytearray, bytes]):
         logger.debug(msg)
@@ -323,19 +329,42 @@ class GameServer:
         self.cursor.execute("SELECT userPass FROM Users WHERE userId=?", (userId,))
         correctPass = self.cursor.fetchone()[0]
         if (correctPass == password):
-            self.validate_user()
-        print(valid, data)
-
-class CookieManager:
-    def __init__(self, database:sqlite3.Connection):
-        self.database = database
-        self.cursor = self.database.cursor()
+            cookie = self.validate_user(username, userId)
+            self.server.senddata(
+                sock, *self.encode_game_msg(
+                    GameMsg.MSG_LOGIN_SUCCESS,
+                    cookie.to_bytes()
+                )
+            )
+            return
+        #if login failed
+        self.server.senddata(
+            sock, *self.encode_game_msg(GameMsg.MSG_LOGIN_FAILED, "Login Failed")
+        )
     
-    def fetch_existsing_cookie(self, userId):
-        self.cursor.execute("SELECT * from Cookies")
 
+
+    def validate_user(self, username:str, userId:int)->Cookie:
+        logger.info(userId)
+        QUERY = "SELECT cookieId, cookieName, cookieValue, expired FROM Cookies WHERE userId=?"
+        user_auth:Cookie = self.cookieManager.fetch_cookie(userId, "user_auth")
+        valid = False
+        if user_auth:
+            valid = not user_auth.expired()
+            if (not valid):
+                CookieManager.destroyCookie(user_auth)
+        if not valid:
+            user_auth_cookie_value = uuid.uuid4().hex
+            expires = time.time() + 10*24*3600
+            user_auth = Cookie(userId, "user_auth", user_auth_cookie_value, expires)
+            self.cookieManager.insertCookie(user_auth)
+        logger.info(user_auth.to_bytes())
+        return user_auth
+
+    
+    # def encode_cookie(self, cookie)
 VERIFICATION_TIMEOUT = 0.500
-server = Sever('127.0.0.1', 65432)
+server = Server('127.0.0.1', 65432)
 server.bind_port()
 server.listen_port()
 to_remove:Set[socket.socket] = set()
@@ -349,4 +378,4 @@ while True:
             to_remove.add(sock)
     for sock in to_remove:
         server.remove_queued(sock)
-        logger.warn("The end for {}".format(sock))
+        logger.warning("The end for {}".format(sock))
