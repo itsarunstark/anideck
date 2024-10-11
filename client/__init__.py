@@ -1,10 +1,14 @@
 import socket
 from typing import Tuple, List, Set, Union, Callable
-from network import PROTOCOLS
+from network import PROTOCOLS, GameMsg, CookieOpt
+from network.tools import to_bytes, from_bytes, encode_msg, decode_msg
+from network.cookiejar import Cookie, CookieManager
 import hashlib
 import sqlite3
 import os
 import sys
+import time
+import struct
 
 to_bytes:Callable = lambda x:x.to_bytes(length=2, byteorder='little', signed=False)
 from_bytes:Callable = lambda x:int.from_bytes(x, byteorder='little', signed=False)
@@ -71,7 +75,7 @@ class Client:
                 start += len(content)
                 bytedata.extend(content)
     
-    def recv_stream(self)->Union[PROTOCOLS,bytearray]:
+    def recv_stream(self)->Tuple[PROTOCOLS,bytearray]:
         bytedata = bytearray()
         ack_state = self.clientsock.recv(1)
         accepted = PROTOCOLS.PROTO_REJ
@@ -97,7 +101,7 @@ class Client:
             lst.append(content)
         return lst
     
-    def create_send_packet(self, proto:PROTOCOLS, msg:Union[bytes,bytearray]):
+    def create_send_packet(self, proto:PROTOCOLS, msg:Union[bytes,bytearray])->bytes:
         return PROTOCOLS.to_bytes(proto)+to_bytes(len(msg))+msg
     
     def query_status(self)->PROTOCOLS:
@@ -115,17 +119,58 @@ class ClientDB:
         self.db = sqlite3.connect(self.dbName)
         self.cursor = self.db.cursor()
         self.init_tables()
-    
-    def get_userinfo(self, username:str):
+        self.cookieManager = CookieManager(self.db)
+        self.cookieManager.cookie_table = "CookieStore"
+        self.cookieManager.cookieMap[CookieOpt.COOKIE_ID] = 'cookieId'
+        self.cookieManager.cookieMap[CookieOpt.COOKIE_USER_ID] = 'userId'
+        self.cookieManager.cookieMap[CookieOpt.COOKIE_NAME] = 'cookieName'
+        self.cookieManager.cookieMap[CookieOpt.COOKIE_VALUE] = 'cookieValue'
+        self.cookieManager.cookieMap[CookieOpt.COOKIE_CREATED] = 'cookieCreate'
+        self.cookieManager.cookieMap[CookieOpt.COOKIE_EXPIRED] = 'cookieExpire'
+
+    def get_current_user(self, username:str, userId:int=-1):
         pass
 
-
+    def inset_user(self, username:str, password:str, userId:int=-1)->bool:
+        """
+        function to save username and password into local game database
+        @params username:str username of user
+        @params password:str password of user
+        @return boolean True if saved else False
+        """
+        self.cursor.execute(
+            "INSERT INTO Users(userId, userName, userPass, loginUser) values(?, ?, ?, ?)",
+            (
+                userId if userId > 0 else int.from_bytes(struct.pack("<q", time.time_ns())[:6]),
+                username,
+                password,
+                0
+            )
+        )
+        self.db.commit()
+        return True
     
     def init_tables(self):
         if self.create_tables:
             with open(self.table_query_script_file, "r") as query_file:
                 self.cursor.executescript(query_file.read())
                 query_file.close()
+    
+    def contains_user(self, userId:int):
+        self.cursor.execute(
+            "SELECT userName FROM Users WHERE userId=?",(userId,)
+        )
+        return len(self.cursor.fetchall())
+    
+    def update_user(self, username:str, password:int, userId:int)->bool:
+        QUERY = "UPDATE Users SET userName=?, userPass=? WHERE userId=?"
+        self.cursor.execute(QUERY, (username, password, userId))
+        self.db.commit()
+        return True
+    
+    def make_default_user(self, userId):
+        self.cursor.execute("UPDATE Users SET loginUser=(userid=?)", (userId, ))
+        self.db.commit()
         
         
     
@@ -134,6 +179,7 @@ class GameUser:
     def __init__(self,clientusername:str, client:Client, client_db:ClientDB):
         self.client = client
         self.clientdb = client_db
+        # self.cursor = self.clientdb.cursor()
     
     def register(self, username:str, password:str)->bool:
         passencoded = hashlib.sha256(password.encode()).digest()
@@ -142,8 +188,18 @@ class GameUser:
         self.client.send_stream(data_pack[:])
         ack_status:PROTOCOLS = self.client.query_status()
         if (ack_status == PROTOCOLS.PROTO_ACK):
-            recv_info = self.client.recv_stream()
-            print(recv_info)
+            accepted, recv_info = self.client.recv_stream()
+            msg = GameMsg(recv_info[0])
+            if (msg == GameMsg.MSG_REGISTER_SUCCESS):
+                print("Registration successful.")
+                print(recv_info)
+                userId:int = decode_msg(recv_info[1:], int)[1]
+                print(userId)
+                self.clientdb.inset_user(username, password, userId)
+                # self.cursor
+            else:
+                print("GAME SERVER MESSAGE::{}".format(recv_info[1:].decode()))
+            
     
     def login(self, username:str, password:str)->bool:
         passencoded = hashlib.sha256(password.encode()).digest()
@@ -152,8 +208,24 @@ class GameUser:
         self.client.send_stream(data_pack)
         ack_status:PROTOCOLS = self.client.query_status()
         if (ack_status == PROTOCOLS.PROTO_ACK):
-            print(self.client.recv_stream())
-
+            accepted, status = self.client.recv_stream()
+            msg_status = GameMsg(status[0])
+            if (msg_status == GameMsg.MSG_LOGIN_SUCCESS):
+                print("Login Successful.", status[1])
+                if (status[1] == CookieOpt.COOKIE_START.value):
+                    cookie = Cookie.from_bytes(status[1:])
+                    print(cookie)
+                    if (cookie in self.clientdb.cookieManager):
+                        del self.clientdb.cookieManager[cookie]
+                    self.clientdb.cookieManager.insertCookie(cookie)
+                if self.clientdb.contains_user(cookie.userId):
+                    self.clientdb.update_user(username, password, cookie.userId)
+                else:
+                    self.clientdb.inset_user(username, password, cookie.userId)
+                self.clientdb.make_default_user(cookie.userId)
+            else:
+                print(status[1:].decode())
+        
 
 
         
@@ -166,7 +238,7 @@ print(client.connect_to_server())
 gameuser = GameUser(None, client, client_db=clientDB)
 if (len(sys.argv) > 1):
     if (sys.argv[1] == 'login'):
-        gameuser.login("hello","sakshi")
+        gameuser.login("sakshi12","arun1234")
     else:
-        gameuser.register("hello", "sakshi")
+        gameuser.register("sakshi now", "arun123")
 # print(client.clientsock.recv(1))

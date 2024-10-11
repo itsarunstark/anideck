@@ -47,6 +47,13 @@ class GameMsg(Flag):
     MSG_REGISTER_SUCCESS = 0x12
     MSG_REGISTER_FAILED = 0x13
 
+    @staticmethod
+    def from_bytes(bytedata:bytes):
+        return GameMsg(int.from_bytes(bytedata))
+    
+    def to_bytes(self):
+        return self.value.to_bytes(byteorder='little')
+
 
 class LoginOptions(Flag):
     LOGIN_FALSE = 0x00
@@ -70,12 +77,17 @@ class CookieOpt(Flag):
     def to_bytes(self):
         return self.value.to_bytes()
     
+    @classmethod
+    def className(self):
+        return self.__name__
+    
     @staticmethod
     def from_bytes(x:bytes):
         data = int.from_bytes(x)
         return CookieOpt(data)
-
+    
+    def __repr__(self) -> str:
+        return self.className()+"::"+self.name
+    
 if __name__ == '__main__':
     print(PROTOCOLS.to_bytes(PROTOCOLS.from_bytes(b'\x1c')))
-
-        

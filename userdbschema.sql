@@ -4,7 +4,7 @@ DROP TABLE IF EXISTS CookieStore;
 CREATE TABLE IF NOT EXISTS Users(
     userId BIGINT PRIMARY KEY,
     userName TEXT UNIQUE NOT NULL,
-    userPass TEXT NOT NULL CHECK (LENGTH(userPass) > 4),
+    userPass TEXT NOT NULL CHECK (LENGTH(userPass) >= 4),
     userAvatar BLOB DEFAULT NULL,
     loginUser INTEGER NOT NULL CHECK (loginUser in (0,1)) DEFAULT 0
 

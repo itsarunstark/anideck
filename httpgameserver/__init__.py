@@ -79,6 +79,7 @@ class Server:
         self.chunks = 1024
         self.register_function = lambda sock,msg:print(msg)
         self.login_user_conv = lambda sock,msg: print(msg)
+        self.login_user_cookie = lambda sock,msg: print(msg)
     
     def socket_configure_default_options(self):
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, True)
@@ -130,16 +131,18 @@ class Server:
         
         elif (proto == PROTOCOLS.PROTO_REGISTER):
             msg,valid = self.recv_bytes(sock)
-            print("message::", msg)
             if valid: self.register_function(sock, msg)
-            else: self.senddata(sock, self.encode_msg(PROTOCOLS.PROTO_FAILED, "Data Packet Null"))
-        
-        
+            else: self.senddata(sock, *self.encode_msg(PROTOCOLS.PROTO_FAILED, "Data Packet Null"))
         
         elif (proto == PROTOCOLS.PROTO_LOGIN_CONV):
             msg, valid = self.recv_bytes(sock)
             if valid: self.login_user_conv(sock, msg)
-            else: self.senddata(sock, self.encode_msg(PROTOCOLS.PROTO_FAILED, "Null Byte Recieved"))
+            else: self.senddata(sock, *self.encode_msg(PROTOCOLS.PROTO_FAILED, "Null Byte Recieved"))
+        
+        elif (proto == PROTOCOLS.PROTO_LOGIN_COOKIE):
+            msg, valid = self.recv_bytes()
+            if valid: self.login_user_cookie(sock, msg)
+            else: self.senddata(sock, *self.encode_msg(PROTOCOLS.PROTO_FAILED, "Null Byte Recieved"))            
     
     def senddata(self,sock:socket.socket, msg:Union[bytes,bytearray], length):
         sentLength = 0
@@ -176,7 +179,7 @@ class Server:
                 if (tries>0):
                     tries -= 1
                 else:
-                    logger.warn("recieved invalid datpacked :: decision :: dropping data")
+                    logger.warning("recieved invalid datpacked :: decision :: dropping data")
                     protodata.zfill(datalength)
                     dt = 0
                     data_incoming = False
@@ -241,35 +244,51 @@ class GameServer:
         self.cookieManager = CookieManager(self.database)
 
     def register_user(self,sock:socket.socket,msg:bytearray):
+
+
         if (len(msg) < 10):
             self.server.senddata(
                 sock, *self.encode_game_msg(GameMsg.MSG_BAD_FORMAT, "Bad Format Failed")
             )
             return
+        
+
         valid,data = self.extract_auth(msg)
         if (not valid):
             self.server.senddata(
                 sock, *self.encode_game_msg(GameMsg.MSG_INVALID_DATA, "Invalid Data is recived, auth Faild")
             )
             return
+        
+
         logger.info("username:%s pass:%s"%data)
         try:
+
             self.cursor.execute("SELECT userId FROM Users WHERE userName=?", (data[0],))
             crossdata = self.cursor.fetchall()
+
+
             if (len(crossdata)):
                 self.server.senddata(
                     sock, *self.encode_game_msg(GameMsg.MSG_REGISTER_FAILED, "User Exists")
                 )
                 return
+
             userid = from_bytes(struct.pack("<d", time.time_ns())[:6])
+
             self.cursor.execute(
                 "INSERT INTO Users(userId, userName, userPass) values(?, ?, ?)",
                 (userid, data[0], data[1].hex())
             )
+
             self.database.commit()
+
+
             self.server.senddata(
-                sock, *self.encode_game_msg(GameMsg.MSG_REGISTER_SUCCESS, "REQUEST_ACCEPTED")
+                sock, *self.encode_game_msg(GameMsg.MSG_REGISTER_SUCCESS, encode_msg(userid))
             )
+
+
         except Exception as serverError:
             error = server.encode_msg(PROTOCOLS.PROTO_REJ, str(serverError))
             logger.error(error[0])
@@ -300,6 +319,9 @@ class GameServer:
         proto = PROTOCOLS.to_bytes(msgProto)
         return server.encode_msg(PROTOCOLS.PROTO_ACK, proto+dData)
     
+
+    def login_user_cookie(self, sock:socket.socket, msg:Union[bytes, bytearray]):
+        logger.debug(msg)
 
     
     def login_user_cred(self, sock:socket.socket, msg:Union[bytearray, bytes]):
@@ -339,7 +361,7 @@ class GameServer:
             return
         #if login failed
         self.server.senddata(
-            sock, *self.encode_game_msg(GameMsg.MSG_LOGIN_FAILED, "Login Failed")
+            sock, *self.encode_game_msg(GameMsg.MSG_LOGIN_FAILED, "Login Failed Wrong Credidentials")
         )
     
 
