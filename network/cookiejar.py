@@ -104,6 +104,7 @@ class Cookie:
         # datalength = 
     def __repr__(self):
         # print(self.__dict__)
+        print(self.__dict__)
         return (
             "Cookie::id:%(_cookieId)d, [name:%(_name)s , value:%(_value)s, created:%(_created)f, expires:%(_expires)f, userid:%(_userId)d]"%
             self.__dict__
@@ -115,6 +116,14 @@ class Cookie:
 
 
 class CookieManager:
+    """
+    A CookieManager Class to Manage cookies for both user and server.
+    takes database connection not the cursor to database
+    """
+
+
+
+
     def __init__(self, database:sqlite3.Connection):
         self.database = database
         self.cursor = self.database.cursor()
@@ -127,9 +136,27 @@ class CookieManager:
             CookieOpt.COOKIE_CREATED: "created",
             CookieOpt.COOKIE_EXPIRED: "expired"
         }
+
+
+
+
+
     
     def fetch_existsing_cookie(self, userId:int)->Dict[str, Cookie]:
-        self.cursor.execute("SELECT * from {} WHERE userId=?".format(self.cookie_table), (userId))
+        self.cursor.execute(
+            "SELECT {} from {} WHERE userId=?".format(
+                "{}, {}, {}, {}, {}, {}".format(
+                    self.cookieMap[CookieOpt.COOKIE_ID],
+                    self.cookieMap[CookieOpt.COOKIE_USER_ID],
+                    self.cookieMap[CookieOpt.COOKIE_NAME],
+                    self.cookieMap[CookieOpt.COOKIE_VALUE],
+                    self.cookieMap[CookieOpt.COOKIE_CREATED],
+                    self.cookieMap[CookieOpt.COOKIE_EXPIRED]
+                ),
+                self.cookie_table
+            ),
+            (userId)
+        )
         cookies:List[Tuple[int,int, str, str, datetime.datetime, datetime.datetime]] = self.cursor.fetchall()
         cookieDict:Dict[str, Cookie] = {}
         for cookie in cookies:
@@ -139,7 +166,23 @@ class CookieManager:
         return cookieDict
     
     def fetch_cookie(self, userId:int, cookieName:str)->Optional[Cookie]:
-        self.cursor.execute("SELECT * FROM {} WHERE userId=? AND cookieName=?".format(self.cookie_table), (userId, cookieName))
+        self.cursor.execute(
+            "SELECT {} FROM {} WHERE userId=? AND cookieName=?".format(
+                "{}, {}, {}, {}, {}, {}".format(
+                    self.cookieMap[CookieOpt.COOKIE_ID],
+                    self.cookieMap[CookieOpt.COOKIE_USER_ID],
+                    self.cookieMap[CookieOpt.COOKIE_NAME],
+                    self.cookieMap[CookieOpt.COOKIE_VALUE],
+                    self.cookieMap[CookieOpt.COOKIE_CREATED],
+                    self.cookieMap[CookieOpt.COOKIE_EXPIRED]
+                ),
+                self.cookie_table
+            ),
+            (
+                userId, 
+                cookieName
+            )
+        )
         cookie = self.cursor.fetchone()
         if (cookie):
             return Cookie(cookie[1], cookie[2], cookie[3], cookie[5], cookie[4], cookie[0])
@@ -169,8 +212,13 @@ class CookieManager:
         )
         self.database.commit()
     
-    def destroyCookie(self):
-        ...
+    def destroyCookie(self, cookie:Cookie):
+        QUERY = "DELETE FROM {} WHERE {}=?".format(
+            self.cookie_table,
+            self.cookieMap[CookieOpt.COOKIE_ID]
+        )
+        self.cursor.execute(QUERY, (cookie.id,))
+        self.database.commit()
     
     def __contains__(self, cookie:Cookie)->int:
         QUERY = "SELECT {} FROM {} WHERE  {}=? AND {}=?".format(

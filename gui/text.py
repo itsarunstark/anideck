@@ -15,7 +15,7 @@ class Text(Widget):
             y:float,
             _anchor=Anchor.ANCHOR_CENTER,
             font_size=16,
-            font_name="Consolas",
+            font_name=None,
             font_color=Color.COLOR_WHITE,
             align="left",
             batch=None,

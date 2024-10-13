@@ -140,7 +140,7 @@ class Server:
             else: self.senddata(sock, *self.encode_msg(PROTOCOLS.PROTO_FAILED, "Null Byte Recieved"))
         
         elif (proto == PROTOCOLS.PROTO_LOGIN_COOKIE):
-            msg, valid = self.recv_bytes()
+            msg, valid = self.recv_bytes(sock)
             if valid: self.login_user_cookie(sock, msg)
             else: self.senddata(sock, *self.encode_msg(PROTOCOLS.PROTO_FAILED, "Null Byte Recieved"))            
     
@@ -241,6 +241,7 @@ class GameServer:
         self.server:Server = server
         self.server.register_function = self.register_user
         self.server.login_user_conv = self.login_user_cred
+        self.server.login_user_cookie = self.login_user_cookie
         self.cookieManager = CookieManager(self.database)
 
     def register_user(self,sock:socket.socket,msg:bytearray):
@@ -321,7 +322,34 @@ class GameServer:
     
 
     def login_user_cookie(self, sock:socket.socket, msg:Union[bytes, bytearray]):
-        logger.debug(msg)
+        if (len(msg) < 10):
+            self.server.senddata(
+                sock, *self.encode_game_msg(GameMsg.MSG_BAD_FORMAT, "Bad Format Failed")
+            )
+            return
+        byte = CookieOpt(msg[0])
+        if (byte == CookieOpt.COOKIE_START):
+            cookie = Cookie.from_bytes(msg)
+            cookieorg = self.cookieManager.fetch_cookie(cookie.userId, cookie.name)
+            if (cookieorg and cookieorg.id == cookie.id):
+                if (cookieorg.expired()):
+                    CookieManager.destroyCookie(cookie)
+                    self.server.senddata(
+                        sock, *self.encode_game_msg(GameMsg.MSG_LOGIN_FAILED, "Cookie Expired")
+                    )
+                    return
+                self.server.senddata(
+                    sock, *self.encode_game_msg(GameMsg.MSG_LOGIN_SUCCESS, "REQUEST_ACCEPTED")
+                )
+                return
+            
+            self.server.senddata(
+                sock, *self.encode_game_msg(GameMsg.MSG_LOGIN_FAILED, "Cookie Not Found")
+            )
+            return
+        self.server.senddata(
+            sock, *self.encode_game_msg(GameMsg.MSG_LOGIN_FAILED, "Not a Cookie")
+        )
 
     
     def login_user_cred(self, sock:socket.socket, msg:Union[bytearray, bytes]):

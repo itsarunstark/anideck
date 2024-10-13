@@ -1,5 +1,5 @@
 import socket
-from typing import Tuple, List, Set, Union, Callable
+from typing import Tuple, List, Set, Union, Callable, Optional
 from network import PROTOCOLS, GameMsg, CookieOpt
 from network.tools import to_bytes, from_bytes, encode_msg, decode_msg
 from network.cookiejar import Cookie, CookieManager
@@ -39,9 +39,12 @@ class Client:
 
     
     def connect_to_server(self)->bool:
-        if (not self.clientsock): self.create_socket()
-        self.clientsock.connect((self.addr, self.port))
-        return self.ack_server()
+        try:
+            if (not self.clientsock): self.create_socket()
+            self.clientsock.connect((self.addr, self.port))
+            return self.ack_server()
+        except Exception as E:
+            return False
     
     def __del__(self):
         if (self.clientsock): self.clientsock.close()
@@ -116,7 +119,7 @@ class ClientDB:
         if not os.path.exists(self.dbName):
             print("Database does not exist, creating one now")
             self.create_tables = True
-        self.db = sqlite3.connect(self.dbName)
+        self.db = sqlite3.connect(self.dbName, check_same_thread=False)
         self.cursor = self.db.cursor()
         self.init_tables()
         self.cookieManager = CookieManager(self.db)
@@ -171,6 +174,13 @@ class ClientDB:
     def make_default_user(self, userId):
         self.cursor.execute("UPDATE Users SET loginUser=(userid=?)", (userId, ))
         self.db.commit()
+    
+    def get_cookie(self, username:str, cookieName:str)->Optional[Cookie]:
+        self.cursor.execute("SELECT userId from Users WHERE userName=?", (username,))
+        userId:int = self.cursor.fetchone()
+        print(userId)
+        if userId is None: return None
+        return self.cookieManager.fetch_cookie(userId[0], cookieName)
         
         
     
@@ -179,13 +189,15 @@ class GameUser:
     def __init__(self,clientusername:str, client:Client, client_db:ClientDB):
         self.client = client
         self.clientdb = client_db
+
         # self.cursor = self.clientdb.cursor()
     
-    def register(self, username:str, password:str)->bool:
+    def register(self, username:str, password:str)->Tuple[PROTOCOLS, Optional[GameMsg], Optional[bytearray]]:
         passencoded = hashlib.sha256(password.encode()).digest()
         content = self.client.enocode_data(username, passencoded)
         data_pack = self.client.create_send_packet(PROTOCOLS.PROTO_REGISTER, content)
         self.client.send_stream(data_pack[:])
+        msg, recv_info = None, None
         ack_status:PROTOCOLS = self.client.query_status()
         if (ack_status == PROTOCOLS.PROTO_ACK):
             accepted, recv_info = self.client.recv_stream()
@@ -199,9 +211,10 @@ class GameUser:
                 # self.cursor
             else:
                 print("GAME SERVER MESSAGE::{}".format(recv_info[1:].decode()))
+        return ack_status, msg, recv_info[1:]
             
     
-    def login(self, username:str, password:str)->bool:
+    def login(self, username:str, password:str)->Tuple[PROTOCOLS, Optional[GameMsg], Optional[bytearray]]:
         passencoded = hashlib.sha256(password.encode()).digest()
         content = self.client.enocode_data(username, passencoded)
         data_pack = self.client.create_send_packet(PROTOCOLS.PROTO_LOGIN_CONV, content)
@@ -218,13 +231,26 @@ class GameUser:
                     if (cookie in self.clientdb.cookieManager):
                         del self.clientdb.cookieManager[cookie]
                     self.clientdb.cookieManager.insertCookie(cookie)
-                if self.clientdb.contains_user(cookie.userId):
-                    self.clientdb.update_user(username, password, cookie.userId)
-                else:
-                    self.clientdb.inset_user(username, password, cookie.userId)
-                self.clientdb.make_default_user(cookie.userId)
+                    if self.clientdb.contains_user(cookie.userId):
+                        self.clientdb.update_user(username, password, cookie.userId)
+                    else:
+                        self.clientdb.inset_user(username, password, cookie.userId)
+                    
+                    self.clientdb.make_default_user(cookie.userId)
             else:
                 print(status[1:].decode())
+            
+            return ack_status, msg_status, status[1:]
+        return ack_status, None, None
+    
+    def loginCookie(self, username:str):
+        print("done")
+        cookie = self.clientdb.get_cookie(username, "user_auth")
+        if not (cookie.expired()):
+            cookieblob = self.client.create_send_packet(PROTOCOLS.PROTO_LOGIN_COOKIE, cookie.to_bytes())
+            self.client.send_stream(cookieblob)
+            print(self.client.query_status())
+            print(self.client.recv_stream())
         
 
 
@@ -232,13 +258,15 @@ class GameUser:
         
 
     
-clientDB = ClientDB("manu.db")
-client = Client('127.0.0.1', 65432)
-print(client.connect_to_server())
-gameuser = GameUser(None, client, client_db=clientDB)
-if (len(sys.argv) > 1):
-    if (sys.argv[1] == 'login'):
-        gameuser.login("sakshi12","arun1234")
-    else:
-        gameuser.register("sakshi now", "arun123")
+# clientDB = ClientDB("manu.db")
+# client = Client('127.0.0.1', 65432)
+# print(client.connect_to_server())
+# gameuser = GameUser(None, client, client_db=clientDB)
+# if (len(sys.argv) > 1):
+#     if (sys.argv[1] == 'login'):
+#         gameuser.login("sakshi12","arun1234")
+#     elif (sys.argv[1] == 'register'):
+#         gameuser.register("sakshi now", "arun123")
+#     else:
+#         gameuser.loginCookie("sakshi12")
 # print(client.clientsock.recv(1))

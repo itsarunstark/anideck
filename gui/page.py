@@ -29,6 +29,7 @@ class Page(shapes.Rectangle):
         self.widgets: List[Widget] = []
         self.active_widget:Widget = None
         self._focused_widget:Widget = None
+        self.index = 0
         self.update_queue:Dict[Widget,Callable[[float],Any]] = {
 
         }

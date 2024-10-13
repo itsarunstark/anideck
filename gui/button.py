@@ -16,7 +16,7 @@ class Button(Widget):
             y:float, 
             _anchor=Anchor.ANCHOR_CENTER,
             font_size=16,
-            font_name="Consolas",
+            font_name=None,
             font_color=Color.COLOR_WHITE,
             background_color=Color.COLOR_RED,
             background_border=0,
@@ -25,7 +25,8 @@ class Button(Widget):
             padding_left=10,
             padding_bottom=5,
             padding_right=10,
-            center=False
+            center=False,
+            batch:graphics.Batch=None
             ):
         # print(_anchor)
         # self.order = parent.group.order + 10
@@ -44,6 +45,7 @@ class Button(Widget):
         )
         self.anchor_x = x
         self.anchor_y = y
+        self.old_batch = self.batch
         # print("text::", self.w, self.h, self._label.content_height)
         # print("BoundBox::", self.boundbox)
         self.w = self._label.content_width + padding_left + padding_right
@@ -138,14 +140,13 @@ class Button(Widget):
         self._text = value
     
     @property
-    def disable(self):
-        return self.disabled
+    def disabled(self):
+        return self._disabled
 
-    @disable.setter
-    def disable(self, value:bool):
-        self.batch = self.batch if not value else None
-        self._label.batch = self.batch
-        self.disabled = value
+    @disabled.setter
+    def disabled(self, value:bool):
+        self._disabled = value
+        self.active = value
     
     @property
     def anchor(self):
@@ -155,6 +156,8 @@ class Button(Widget):
     def anchor(self, value):
         self._anchor = value
         self.widget_resolve()
+    
+
     
     def widget_resolve(self):
         super().widget_resolve()

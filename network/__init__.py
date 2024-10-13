@@ -74,8 +74,8 @@ class CookieOpt(Flag):
     COOKIE_USER_ID = 0x35
     COOKIE_END = 0x00
 
-    def to_bytes(self):
-        return self.value.to_bytes()
+    def to_bytes(self)->bytes:
+        return self.value.to_bytes(1, byteorder='little')
     
     @classmethod
     def className(self):
@@ -83,7 +83,7 @@ class CookieOpt(Flag):
     
     @staticmethod
     def from_bytes(x:bytes):
-        data = int.from_bytes(x)
+        data = int.from_bytes(x, byteorder='little')
         return CookieOpt(data)
     
     def __repr__(self) -> str:
