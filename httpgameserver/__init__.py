@@ -83,6 +83,8 @@ class Server:
         self.login_user_cookie = lambda sock,msg: print(msg)
         self.batch_create = lambda sock,msg: print(msg)
         self.clear_sock_gracefully = lambda sock: print("CLEAR FUNCTION:: SOCK::", sock)
+        self.get_queue_length = lambda sock: print("Done")
+        self.withdraw_queue = lambda sock: print("implement withdraw function")
     
     def socket_configure_default_options(self):
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, True)
@@ -124,7 +126,6 @@ class Server:
             logger.info("lost connection:: [{}]".format(sock.fileno()))
             sock.close()
             return
-        print(data)
         proto = PROTOCOLS.from_bytes(data)
         if sock in self.queued_connections:
             
@@ -152,6 +153,11 @@ class Server:
             msg, valid = self.recv_bytes(sock)
             if valid: self.batch_create(sock, msg)
             else: self.senddata(sock, *self.encode_msg(PROTOCOLS.PROTO_FAILED, "Null Bytes recieved"))
+        elif (proto == PROTOCOLS.PROTO_GET_QUEUE_LENGTH):
+            self.get_queue_length(sock)
+        
+        elif (proto == PROTOCOLS.PROTO_QUEUE_WITHDRAW):
+            self.withdraw_queue(sock)
 
     
     def senddata(self,sock:socket.socket, msg:Union[bytes,bytearray], length):
@@ -223,7 +229,7 @@ class Server:
         enc = msg if (isinstance(msg, bytes) or isinstance(msg,bytearray)) else msg.encode()
         dLength = len(enc)
         dLd = dLength.to_bytes(2, byteorder='little', signed=False)
-        print(enc, dLd, protocolbyte)
+        # print(enc, dLd, protocolbyte)
         return protocolbyte+dLd+enc, 3 + dLength
 
     
@@ -254,9 +260,19 @@ class GameServer:
         self.server.login_user_cookie = self.login_user_cookie
         self.server.batch_create = self.create_batch
         self.server.clear_sock_gracefully = self.handle_closed
+        self.server.get_queue_length = self.get_queue
+        self.server.withdraw_queue = self.remove_player_from_queue
         self.cookieManager = CookieManager(self.database)
         self.playerQueue:Dict[socket.socket, User] = {}
         self.batches = {}
+    
+    def remove_player_from_queue(self, sock):
+        if (sock) in self.playerQueue:
+            player = self.playerQueue.pop(sock)
+            logger.info("player %d removed from queue [Player Request]"%player.userId)
+        self.server.senddata(
+            sock, *self.encode_game_msg(GameMsg.MSG_OK, b'')
+        )
 
     def register_user(self,sock:socket.socket,msg:bytearray):
 
@@ -305,7 +321,7 @@ class GameServer:
 
 
         except Exception as serverError:
-            error = server.encode_msg(PROTOCOLS.PROTO_REJ, str(serverError))
+            error = self.server.encode_msg(PROTOCOLS.PROTO_REJ, str(serverError))
             logger.error(error[0])
             self.server.senddata(
                 sock, *error
@@ -337,7 +353,7 @@ class GameServer:
         # if isinstance()
         dData = data if (isinstance(data, bytes) or isinstance(data,bytearray)) else data.encode()
         proto = PROTOCOLS.to_bytes(msgProto)
-        return server.encode_msg(PROTOCOLS.PROTO_ACK, proto+dData)
+        return self.server.encode_msg(PROTOCOLS.PROTO_ACK, proto+dData)
     
 
     def login_user_cookie(self, sock:socket.socket, msg:Union[bytes, bytearray]):
@@ -419,10 +435,8 @@ class GameServer:
             return
         logger.info("BATCH REQUEST")
         cookie = Cookie.from_bytes(msg)
-        print(cookie.userId)
         player = User(cookie.userId, sock, cookie)
         self.playerQueue[sock] = player
-        print(self.playerQueue)
         if (len(self.playerQueue) > 4):
             self.create_new_batch()
         self.server.senddata(
@@ -431,6 +445,13 @@ class GameServer:
 
     def create_new_batch(self):
         print("New batch should be created here")
+    
+    def get_queue(self, sock):
+        queueLength = len(self.playerQueue)%4
+        logger.info("Now sending some data")
+        self.server.senddata(
+            sock, *self.encode_game_msg(GameMsg.MSG_QUEUE_LENGTH, encode_msg(queueLength))
+        )
 
     def validate_user(self, username:str, userId:int)->Cookie:
         logger.info(userId)
@@ -451,19 +472,28 @@ class GameServer:
 
     
     # def encode_cookie(self, cookie)
-VERIFICATION_TIMEOUT = 0.500
-server = Server('127.0.0.1', 65432)
-server.bind_port()
-server.listen_port()
-to_remove:Set[socket.socket] = set()
-game= GameServer(server)
-while True:
-    t0 = time.time()
-    server.pool()
-    to_remove.clear()
-    for sock,limit in server.queued_connections.items():
-        if (t0-limit > VERIFICATION_TIMEOUT):
-            to_remove.add(sock)
-    for sock in to_remove:
-        server.remove_queued(sock)
-        logger.warning("The end for {}".format(sock))
+def main():
+    VERIFICATION_TIMEOUT = 0.500
+    server = Server('127.0.0.1', 65432)
+    server.bind_port()
+    server.listen_port()
+    to_remove:Set[socket.socket] = set()
+    game= GameServer(server)
+    while True:
+        try:
+            t0 = time.time()
+            server.pool()
+            to_remove.clear()
+            for sock,limit in server.queued_connections.items():
+                if (t0-limit > VERIFICATION_TIMEOUT):
+                    to_remove.add(sock)
+            for sock in to_remove:
+                server.remove_queued(sock)
+                logger.warning("The end for {}".format(sock))
+        except KeyboardInterrupt as RestartRequest:
+            print("closing all connections")
+            server.socket.close()
+            break
+
+if __name__ == '__main__':
+    main()

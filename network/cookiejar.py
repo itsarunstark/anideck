@@ -86,7 +86,7 @@ class Cookie:
             length, opt_data = decode_msg(cookieBytes[dataoffset:], context_data[cookieopt][0])
             # print(length)
             context_data[cookieopt][1] = opt_data
-            print(opt_data)
+            # print(opt_data)
             dataoffset += length+2
             # print(dataoffset)
     
@@ -104,7 +104,7 @@ class Cookie:
         # datalength = 
     def __repr__(self):
         # print(self.__dict__)
-        print(self.__dict__)
+        # print(self.__dict__)
         return (
             "Cookie::id:%(_cookieId)d, [name:%(_name)s , value:%(_value)s, created:%(_created)f, expires:%(_expires)f, userid:%(_userId)d]"%
             self.__dict__

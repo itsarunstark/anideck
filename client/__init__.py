@@ -81,6 +81,7 @@ class Client:
     def recv_stream(self)->Tuple[PROTOCOLS,bytearray]:
         bytedata = bytearray()
         ack_state = self.clientsock.recv(1)
+        print("ack::status::", ack_state)
         accepted = PROTOCOLS.PROTO_REJ
         proto = PROTOCOLS.from_bytes(ack_state)
         if(proto == PROTOCOLS.PROTO_ACK):
@@ -178,6 +179,7 @@ class ClientDB:
     def get_default_user(self)->Optional[Tuple[int, str, int, Optional[bytes], int]]:
         self.cursor.execute("SELECT * FROM Users WHERE loginUser=?", (1,))
         user_details = self.cursor.fetchone()
+        print(user_details)
         return user_details
 
     
@@ -262,16 +264,43 @@ class GameUser:
             print(self.client.query_status())
             print(self.client.recv_stream())
     
-    def createBatch(self, userCookie:Cookie):
+    def createBatch(self, userCookie:Cookie)->Tuple[PROTOCOLS, Optional[GameMsg], Optional[bytearray]]:
         cookieBlob = self.client.create_send_packet(
             PROTOCOLS.PROTO_CREATE_BATCH, 
             userCookie.to_bytes()
         )
-        print(PROTOCOLS.PROTO_CREATE_BATCH)
-        print(cookieBlob)
         self.client.send_stream(cookieBlob)
         print(self.client.query_status())
-        print(self.client.recv_stream())
+        msg = self.client.recv_stream()
+        status = msg[0]
+        gamemsg:GameMsg = None
+        msgstream:bytearray = None
+        if (status == PROTOCOLS.PROTO_ACK):
+            gamemsg = GameMsg.from_bytes(msg[1].pop(0))
+            msgstream = msg[1]
+            print(gamemsg)
+        return status, gamemsg, msgstream
+    
+    def getQueueLength(self)->Tuple[PROTOCOLS, Optional[GameMsg], int]:
+        self.client.send_stream(
+            self.client.create_send_packet(PROTOCOLS.PROTO_GET_QUEUE_LENGTH, b'')
+        )
+        status, data = self.client.recv_stream()
+        gamemsg = None
+        length = 4
+        if (status == PROTOCOLS.PROTO_ACK):
+            gamemsg = GameMsg.from_bytes(data.pop(0))
+            if (gamemsg == GameMsg.MSG_QUEUE_LENGTH):
+                length = decode_msg(data, int)[1]
+        return status, gamemsg, length
+    
+    def withdrawQueue(self):
+        self.client.send_stream(
+            self.client.create_send_packet(PROTOCOLS.PROTO_QUEUE_WITHDRAW, b'')
+        )
+        status, data = self.client.recv_stream()
+        print(status, data)
+        return True
 
 
         

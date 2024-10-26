@@ -25,6 +25,8 @@ class PROTOCOLS(Flag):
     PROTO_JOIN_BATCH = 0x0E
     PROTO_LEAVE_BATCH = 0x0F
     PROTO_CREATE_BATCH = 0x10
+    PROTO_GET_QUEUE_LENGTH = 0x11
+    PROTO_QUEUE_WITHDRAW = 0x12
 
     @staticmethod
     def from_bytes(byte:Union[bytes,bytearray]):
@@ -45,16 +47,18 @@ class GameMsg(Flag):
     MSG_USER_EXISTS = 0x07
     MSG_USER_NOT_EXIST = 0x08
     MSG_COOKIE_RESPONSE = 0x09
-    MSG_LOGIN_FAILED = 0x10
-    MSG_LOGIN_SUCCESS = 0x11
-    MSG_REGISTER_SUCCESS = 0x12
-    MSG_REGISTER_FAILED = 0x13
-    MSG_BATCH_ACTIVITY = 0x14
-    MSG_BATCH_QUEUED = 0x15
+    MSG_LOGIN_FAILED = 0x0A
+    MSG_LOGIN_SUCCESS = 0x0B
+    MSG_REGISTER_SUCCESS = 0x0C
+    MSG_REGISTER_FAILED = 0x0D
+    MSG_BATCH_ACTIVITY = 0x0E
+    MSG_BATCH_QUEUED = 0x0F
+    MSG_QUEUE_LENGTH = 0x10
+    MSG_REJECTED = 0x11
 
     @staticmethod
     def from_bytes(bytedata:bytes):
-        return GameMsg(int.from_bytes(bytedata))
+        return GameMsg(bytedata)
     
     def to_bytes(self):
         return self.value.to_bytes(byteorder='little')
