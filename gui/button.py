@@ -18,7 +18,7 @@ class Button(Widget):
             font_size=16,
             font_name=None,
             font_color=Color.COLOR_WHITE,
-            background_color=Color.COLOR_RED,
+            background_color=Color.COLOR_BLACK,
             background_border=0,
             background_border_color=Color.COLOR_RED,
             padding_top=5,
@@ -191,4 +191,10 @@ class Button(Widget):
     
     def onClick(self, callfn:Callable):
         self._callerfun = callfn
-        
+    
+class GameButton(Button):
+    def widget_resolve(self):
+        super().widget_resolve()
+        self.background_color = Color.COLOR_BLACK
+        self._active_color = Color.COLOR_CRIMSON_RED
+        self._click_color = Color.COLOR_DARK_RED

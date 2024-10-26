@@ -54,11 +54,12 @@ class Connection:
     def read_updates(self):
         print("read request detected")
 
-class User(object):
-    def __init__(self, userId, username, connection:socket.socket=None):
+class User:
+    def __init__(self, userId, connection:socket.socket=None, cookie:Cookie=None):
         self.userId = userId
-        self.username = username
+        # self.username = username
         self.connection:socket.socket = connection
+        self.gameData = {}
 
     def read_msg(self):
         logger.warning("Not yet implemented")
@@ -80,6 +81,8 @@ class Server:
         self.register_function = lambda sock,msg:print(msg)
         self.login_user_conv = lambda sock,msg: print(msg)
         self.login_user_cookie = lambda sock,msg: print(msg)
+        self.batch_create = lambda sock,msg: print(msg)
+        self.clear_sock_gracefully = lambda sock: print("CLEAR FUNCTION:: SOCK::", sock)
     
     def socket_configure_default_options(self):
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, True)
@@ -117,10 +120,11 @@ class Server:
         if not len(data):
             if sock in self.queued_connections: del self.queued_connections[sock]
             if sock in self.pooling_socks: self.pooling_socks.remove(sock)
+            self.clear_sock_gracefully(sock)
             logger.info("lost connection:: [{}]".format(sock.fileno()))
             sock.close()
             return
-        
+        print(data)
         proto = PROTOCOLS.from_bytes(data)
         if sock in self.queued_connections:
             
@@ -142,7 +146,13 @@ class Server:
         elif (proto == PROTOCOLS.PROTO_LOGIN_COOKIE):
             msg, valid = self.recv_bytes(sock)
             if valid: self.login_user_cookie(sock, msg)
-            else: self.senddata(sock, *self.encode_msg(PROTOCOLS.PROTO_FAILED, "Null Byte Recieved"))            
+            else: self.senddata(sock, *self.encode_msg(PROTOCOLS.PROTO_FAILED, "Null Byte Recieved")) 
+
+        elif (proto == PROTOCOLS.PROTO_CREATE_BATCH):
+            msg, valid = self.recv_bytes(sock)
+            if valid: self.batch_create(sock, msg)
+            else: self.senddata(sock, *self.encode_msg(PROTOCOLS.PROTO_FAILED, "Null Bytes recieved"))
+
     
     def senddata(self,sock:socket.socket, msg:Union[bytes,bytearray], length):
         sentLength = 0
@@ -242,7 +252,11 @@ class GameServer:
         self.server.register_function = self.register_user
         self.server.login_user_conv = self.login_user_cred
         self.server.login_user_cookie = self.login_user_cookie
+        self.server.batch_create = self.create_batch
+        self.server.clear_sock_gracefully = self.handle_closed
         self.cookieManager = CookieManager(self.database)
+        self.playerQueue:Dict[socket.socket, User] = {}
+        self.batches = {}
 
     def register_user(self,sock:socket.socket,msg:bytearray):
 
@@ -297,6 +311,11 @@ class GameServer:
                 sock, *error
             )
 
+    def handle_closed(self, sock:socket.socket):
+        if (sock in self.playerQueue):
+            player = self.playerQueue.pop(sock)
+            logger.debug("Connection out for player {}".format(player.userId))
+        
 
     def extract_auth(self, bytearr:Union[bytes,bytearray])->Tuple[bool, Tuple[str,Union[bytes,bytearray]]]:
         """
@@ -392,7 +411,26 @@ class GameServer:
             sock, *self.encode_game_msg(GameMsg.MSG_LOGIN_FAILED, "Login Failed Wrong Credidentials")
         )
     
+    def create_batch(self, sock:socket.socket, msg:Union[bytearray, bytes]):
+        if (sock in self.playerQueue):
+            self.server.senddata(
+                sock, *self.encode_game_msg(GameMsg.MSG_BATCH_QUEUED, "Waiting for other players to join.")
+            )
+            return
+        logger.info("BATCH REQUEST")
+        cookie = Cookie.from_bytes(msg)
+        print(cookie.userId)
+        player = User(cookie.userId, sock, cookie)
+        self.playerQueue[sock] = player
+        print(self.playerQueue)
+        if (len(self.playerQueue) > 4):
+            self.create_new_batch()
+        self.server.senddata(
+            sock, *self.encode_game_msg(GameMsg.MSG_BATCH_QUEUED, "Waiting for other players to join")
+        )
 
+    def create_new_batch(self):
+        print("New batch should be created here")
 
     def validate_user(self, username:str, userId:int)->Cookie:
         logger.info(userId)
@@ -402,7 +440,7 @@ class GameServer:
         if user_auth:
             valid = not user_auth.expired()
             if (not valid):
-                CookieManager.destroyCookie(user_auth)
+                self.cookieManager.destroyCookie(user_auth)
         if not valid:
             user_auth_cookie_value = uuid.uuid4().hex
             expires = time.time() + 10*24*3600

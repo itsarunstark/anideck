@@ -22,6 +22,9 @@ class PROTOCOLS(Flag):
     PROTO_LOGIN_FAILED = 0x0B
     PROTO_SUCCESS = 0x0C
     PROTO_FAILED = 0x0D
+    PROTO_JOIN_BATCH = 0x0E
+    PROTO_LEAVE_BATCH = 0x0F
+    PROTO_CREATE_BATCH = 0x10
 
     @staticmethod
     def from_bytes(byte:Union[bytes,bytearray]):
@@ -46,6 +49,8 @@ class GameMsg(Flag):
     MSG_LOGIN_SUCCESS = 0x11
     MSG_REGISTER_SUCCESS = 0x12
     MSG_REGISTER_FAILED = 0x13
+    MSG_BATCH_ACTIVITY = 0x14
+    MSG_BATCH_QUEUED = 0x15
 
     @staticmethod
     def from_bytes(bytedata:bytes):

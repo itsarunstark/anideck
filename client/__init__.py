@@ -175,6 +175,12 @@ class ClientDB:
         self.cursor.execute("UPDATE Users SET loginUser=(userid=?)", (userId, ))
         self.db.commit()
     
+    def get_default_user(self)->Optional[Tuple[int, str, int, Optional[bytes], int]]:
+        self.cursor.execute("SELECT * FROM Users WHERE loginUser=?", (1,))
+        user_details = self.cursor.fetchone()
+        return user_details
+
+    
     def get_cookie(self, username:str, cookieName:str)->Optional[Cookie]:
         self.cursor.execute("SELECT userId from Users WHERE userName=?", (username,))
         userId:int = self.cursor.fetchone()
@@ -183,7 +189,11 @@ class ClientDB:
         return self.cookieManager.fetch_cookie(userId[0], cookieName)
         
         
-    
+class Player:
+    def __init__(self, username, database, cookie):
+        self.username = username
+        self.database = database
+        self.cookie = cookie
 
 class GameUser:
     def __init__(self,clientusername:str, client:Client, client_db:ClientDB):
@@ -251,7 +261,17 @@ class GameUser:
             self.client.send_stream(cookieblob)
             print(self.client.query_status())
             print(self.client.recv_stream())
-        
+    
+    def createBatch(self, userCookie:Cookie):
+        cookieBlob = self.client.create_send_packet(
+            PROTOCOLS.PROTO_CREATE_BATCH, 
+            userCookie.to_bytes()
+        )
+        print(PROTOCOLS.PROTO_CREATE_BATCH)
+        print(cookieBlob)
+        self.client.send_stream(cookieBlob)
+        print(self.client.query_status())
+        print(self.client.recv_stream())
 
 
         
